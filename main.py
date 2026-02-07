@@ -204,7 +204,7 @@ class DownloaderApp(App):
         format_box.add_widget(format_label)
 
         self.format_spinner = Spinner(
-            text="Audio",
+            text="Both",
             values=("Audio", "Video", "Both"),
             size_hint=(1, 0.7),
             background_color=(0.25, 0.25, 0.35, 1),
@@ -332,7 +332,8 @@ class DownloaderApp(App):
     def start_download(self, instance):
         url = self.url_input.text.strip()
         if not url:
-            self.update_status("Please enter a URL first!", (1, 0.4, 0.4, 1))
+            self.status_label.text = "Please enter a URL first!"
+            self.status_label.color = (1, 0.4, 0.4, 1)
             return
 
         self.reset_progress()
@@ -415,11 +416,40 @@ class DownloaderApp(App):
 
     def progress_hook(self, d):
         if d["status"] == "downloading":
-            # Extract progress values
-            percent = d.get("downloaded_bytes", 0)
-            total = d.get("total_bytes") or d.get("total_bytes_estimate", 0)
-            speed = d.get("_speed_str", "--")
-            eta = d.get("_eta_str", "--")
+            # Extract progress values safely
+            percent = d.get("downloaded_bytes", 0) or 0
+            total = d.get("total_bytes") or d.get("total_bytes_estimate", 0) or 0
+
+            # Safely get speed - yt_dlp may return raw value or formatted string
+            speed_raw = d.get("speed")
+            if speed_raw is not None:
+                try:
+                    # Format speed as MB/s or KB/s
+                    if speed_raw >= 1024 * 1024:
+                        speed = f"{speed_raw / (1024 * 1024):.1f} MB/s"
+                    elif speed_raw >= 1024:
+                        speed = f"{speed_raw / 1024:.1f} KB/s"
+                    else:
+                        speed = f"{speed_raw:.0f} B/s"
+                except (TypeError, ValueError):
+                    speed = str(speed_raw) if speed_raw else "--"
+            else:
+                speed = "--"
+
+            # Safely get ETA - yt_dlp may return raw seconds or formatted string
+            eta_raw = d.get("eta")
+            if eta_raw is not None:
+                try:
+                    # Format ETA as mm:ss or hh:mm:ss
+                    eta_seconds = int(eta_raw)
+                    if eta_seconds >= 3600:
+                        eta = f"{eta_seconds // 3600}:{(eta_seconds % 3600) // 60:02d}:{eta_seconds % 60:02d}"
+                    else:
+                        eta = f"{eta_seconds // 60}:{eta_seconds % 60:02d}"
+                except (TypeError, ValueError):
+                    eta = str(eta_raw) if eta_raw else "--"
+            else:
+                eta = "--"
 
             if total > 0:
                 progress_pct = (percent / total) * 100
