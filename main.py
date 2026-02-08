@@ -18,80 +18,70 @@ import yt_dlp
 
 
 def get_download_path():
+    """Get a writable path that works on Android 10+ without special permissions"""
     if platform == "android":
-        from android.storage import primary_external_storage_path
+        from jnius import autoclass, cast
+        from android import mActivity
 
-        # Save to Downloads folder on Android
-        downloads = os.path.join(primary_external_storage_path(), "Download")
-        if not os.path.exists(downloads):
-            os.makedirs(downloads)
-        return downloads
+        # Use App-Specific External Storage
+        # Path: /sdcard/Android/data/org.pyapp.ytdownloader/files/Download
+        context = cast("android.content.Context", mActivity.getApplicationContext())
+
+        # getExternalFilesDir(None) gives us the private app folder on SD card
+        file_p = context.getExternalFilesDir(None)
+        download_path = os.path.join(file_p.getAbsolutePath(), "Download")
     else:
-        # For desktop, use current directory or Downloads folder
-        return os.path.expanduser("~/Downloads")
+        # Desktop fallback
+        download_path = os.path.expanduser("~/Downloads")
+
+    if not os.path.exists(download_path):
+        os.makedirs(download_path)
+    return download_path
 
 
 def get_ffmpeg_location():
-    """Get FFmpeg location for yt-dlp on Android
-
-    This function extracts bundled FFmpeg binaries to the app's files directory
-    and sets executable permissions so yt-dlp can use them.
-    """
+    """Locate the pre-installed 'fake library' FFmpeg"""
     if platform == "android":
         try:
+            from jnius import autoclass, cast
             from android import mActivity
-            import shutil
-            import stat
 
-            # Get the app's files directory (writable location)
-            files_dir = str(mActivity.getFilesDir().getAbsolutePath())
-            ffmpeg_dir = os.path.join(files_dir, "ffmpeg_bin")
-            ffmpeg_path = os.path.join(ffmpeg_dir, "ffmpeg")
+            # 1. Find the read-only executable in the system library path
+            Context = autoclass("android.content.Context")
+            context = cast(Context, mActivity.getApplicationContext())
+            app_info = context.getApplicationInfo()
+            native_lib_dir = app_info.nativeLibraryDir
 
-            # If already extracted, return the path
-            if os.path.exists(ffmpeg_path):
-                return ffmpeg_dir
+            # The system installed it here because we named it .so
+            source_ffmpeg = os.path.join(native_lib_dir, "libffmpeg.so")
 
-            # Create the ffmpeg directory
-            os.makedirs(ffmpeg_dir, exist_ok=True)
+            # 2. Verify it exists
+            if not os.path.exists(source_ffmpeg):
+                print(f"Error: libffmpeg.so not found at {source_ffmpeg}")
+                return None
 
-            # Detect device architecture
-            from jnius import autoclass
+            # 3. Create a symlink named "ffmpeg" in our writable folder
+            # yt-dlp needs the file to be named "ffmpeg", not "libffmpeg.so"
+            files_dir = context.getFilesDir().getAbsolutePath()
+            bin_dir = os.path.join(files_dir, "bin")
+            os.makedirs(bin_dir, exist_ok=True)
 
-            Build = autoclass("android.os.Build")
-            supported_abis = list(Build.SUPPORTED_ABIS)
+            target_ffmpeg = os.path.join(bin_dir, "ffmpeg")
 
-            # Determine which architecture to use
-            arch = "arm64-v8a"  # Default
-            if "arm64-v8a" in supported_abis:
-                arch = "arm64-v8a"
-            elif "armeabi-v7a" in supported_abis:
-                arch = "armeabi-v7a"
+            # Re-create the link if needed
+            if os.path.exists(target_ffmpeg):
+                if os.path.realpath(target_ffmpeg) != source_ffmpeg:
+                    os.remove(target_ffmpeg)
+                    os.symlink(source_ffmpeg, target_ffmpeg)
+            else:
+                os.symlink(source_ffmpeg, target_ffmpeg)
 
-            # Get the bundled binaries from app's assets
-            # Binaries are included via source.include_patterns in buildozer.spec
-            app_dir = os.path.dirname(os.path.abspath(__file__))
-            bundled_dir = os.path.join(app_dir, "ffmpeg_bin", arch)
-
-            # Copy ffmpeg to files directory (ffprobe not included in bundle)
-            src = os.path.join(bundled_dir, "ffmpeg")
-            if os.path.exists(src):
-                shutil.copy2(src, ffmpeg_path)
-                # Set executable permissions (chmod +x)
-                os.chmod(
-                    ffmpeg_path,
-                    os.stat(ffmpeg_path).st_mode
-                    | stat.S_IXUSR
-                    | stat.S_IXGRP
-                    | stat.S_IXOTH,
-                )
-
-            if os.path.exists(ffmpeg_path):
-                return ffmpeg_dir
+            # Return the DIRECTORY containing the 'ffmpeg' link
+            return bin_dir
 
         except Exception as e:
-            # Log error but don't crash
             print(f"FFmpeg setup error: {e}")
+            return None
 
     return None  # Use system default on desktop
 

@@ -67,28 +67,24 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-buildozer-
     
-    - name: Verify FFmpeg binaries
+    - name: Verify FFmpeg native libraries
       run: |
-        # FFmpeg binaries are bundled in the repo at ffmpeg_bin/
-        # Just verify they exist and set permissions
-        echo "=== Verifying FFmpeg binaries ==="
-        ls -la ffmpeg_bin/arm64-v8a/
-        ls -la ffmpeg_bin/armeabi-v7a/
+        # FFmpeg native libraries are bundled in libs/ as libffmpeg.so
+        echo "=== Verifying native libraries ==="
+        ls -la libs/arm64-v8a/
+        ls -la libs/armeabi-v7a/
         
-        if [ ! -f ffmpeg_bin/arm64-v8a/ffmpeg ]; then
-          echo "ERROR: arm64-v8a/ffmpeg not found!"
+        if [ ! -f libs/arm64-v8a/libffmpeg.so ]; then
+          echo "ERROR: arm64-v8a/libffmpeg.so not found!"
           exit 1
         fi
         
-        if [ ! -f ffmpeg_bin/armeabi-v7a/ffmpeg ]; then
-          echo "ERROR: armeabi-v7a/ffmpeg not found!"
+        if [ ! -f libs/armeabi-v7a/libffmpeg.so ]; then
+          echo "ERROR: armeabi-v7a/libffmpeg.so not found!"
           exit 1
         fi
         
-        # Ensure binaries are executable
-        chmod +x ffmpeg_bin/*/ffmpeg 2>/dev/null || true
-        
-        echo "FFmpeg binaries verified successfully!"
+        echo "Native libraries verified successfully!"
     
     - name: Build APK with Buildozer
       run: |

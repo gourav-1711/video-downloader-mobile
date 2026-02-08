@@ -16,7 +16,7 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json
 
 # (list) List of inclusions using pattern matching
-source.include_patterns = ffmpeg_bin/*
+# Note: ffmpeg is now in jniLibs/ as a native library (see android.add_libs)
 
 # (list) Source files to exclude (let empty to not exclude anything)
 #source.exclude_exts = spec
@@ -196,6 +196,11 @@ android.accept_sdk_license = True
 
 # (list) Gradle dependencies to add
 android.gradle_dependencies = com.android.support:support-compat:28.0.0
+
+# (list) Add native libraries (.so files) to the APK
+# These will be extracted to nativeLibraryDir and are executable
+android.add_libs_armeabi_v7a = libs/armeabi-v7a/*.so
+android.add_libs_arm64_v8a = libs/arm64-v8a/*.so
 
 # (bool) Enable AndroidX support. Enable when 'android.gradle_dependencies'
 # contains an pointx dependency.
