@@ -1,5 +1,7 @@
 import threading
 import os
+import sys
+import io
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.textinput import TextInput
@@ -371,20 +373,35 @@ class DownloaderApp(App):
             format_string = self.get_format_string(format_type, quality)
             download_path = get_download_path()
 
-            # Base options
+            # Create a custom logger class for Android compatibility
+            # On Android/Kivy, sys.stdout/stderr may be strings, not file-like objects
+            class QuietLogger:
+                def debug(self, msg):
+                    pass
+
+                def warning(self, msg):
+                    pass
+
+                def error(self, msg):
+                    pass
+
+            # Base options with Android-compatible settings
             ydl_opts = {
                 "format": format_string,
-                "outtmpl": os.path.join(download_path, "%(title)s.%(ext)s"),
+                "outtmpl": {
+                    "default": os.path.join(download_path, "%(title)s.%(ext)s")
+                },
                 "noplaylist": True,
                 "progress_hooks": [self.progress_hook],
                 "quiet": True,
                 "no_warnings": True,
-                "noprogress": False,
+                "noprogress": True,  # Disable console progress to avoid write issues
+                "logger": QuietLogger(),  # Use custom logger for Android
                 # Speed optimizations
-                "concurrent_fragment_downloads": 8,  # Download 8 fragments at once
-                "buffersize": 1024 * 64,  # 64KB buffer
-                "http_chunk_size": 10485760,  # 10MB chunks
-                # Prefer non-fragmented formats (mp4/webm over dash)
+                "concurrent_fragment_downloads": 8,
+                "buffersize": 1024 * 64,
+                "http_chunk_size": 10485760,
+                # Prefer non-fragmented formats
                 "format_sort": ["proto:https", "ext:mp4:webm"],
             }
 
