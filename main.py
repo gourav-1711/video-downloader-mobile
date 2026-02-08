@@ -47,10 +47,9 @@ def get_ffmpeg_location():
             files_dir = str(mActivity.getFilesDir().getAbsolutePath())
             ffmpeg_dir = os.path.join(files_dir, "ffmpeg_bin")
             ffmpeg_path = os.path.join(ffmpeg_dir, "ffmpeg")
-            ffprobe_path = os.path.join(ffmpeg_dir, "ffprobe")
 
             # If already extracted, return the path
-            if os.path.exists(ffmpeg_path) and os.path.exists(ffprobe_path):
+            if os.path.exists(ffmpeg_path):
                 return ffmpeg_dir
 
             # Create the ffmpeg directory
@@ -74,20 +73,18 @@ def get_ffmpeg_location():
             app_dir = os.path.dirname(os.path.abspath(__file__))
             bundled_dir = os.path.join(app_dir, "ffmpeg_bin", arch)
 
-            # Copy ffmpeg and ffprobe to files directory
-            for binary in ["ffmpeg", "ffprobe"]:
-                src = os.path.join(bundled_dir, binary)
-                dst = os.path.join(ffmpeg_dir, binary)
-                if os.path.exists(src):
-                    shutil.copy2(src, dst)
-                    # Set executable permissions (chmod +x)
-                    os.chmod(
-                        dst,
-                        os.stat(dst).st_mode
-                        | stat.S_IXUSR
-                        | stat.S_IXGRP
-                        | stat.S_IXOTH,
-                    )
+            # Copy ffmpeg to files directory (ffprobe not included in bundle)
+            src = os.path.join(bundled_dir, "ffmpeg")
+            if os.path.exists(src):
+                shutil.copy2(src, ffmpeg_path)
+                # Set executable permissions (chmod +x)
+                os.chmod(
+                    ffmpeg_path,
+                    os.stat(ffmpeg_path).st_mode
+                    | stat.S_IXUSR
+                    | stat.S_IXGRP
+                    | stat.S_IXOTH,
+                )
 
             if os.path.exists(ffmpeg_path):
                 return ffmpeg_dir
@@ -452,11 +449,18 @@ class DownloaderApp(App):
                 def error(self, msg):
                     pass
 
+            # Use timestamp-based filename to avoid metadata extraction issues
+            from datetime import datetime
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
             # Base options with Android-compatible settings
             ydl_opts = {
                 "format": format_string,
                 "outtmpl": {
-                    "default": os.path.join(download_path, "%(title)s.%(ext)s")
+                    "default": os.path.join(
+                        download_path, f"download_{timestamp}.%(ext)s"
+                    )
                 },
                 "noplaylist": True,
                 "progress_hooks": [self.progress_hook],

@@ -67,55 +67,28 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-buildozer-
     
-    - name: Download FFmpeg binaries for Android
+    - name: Verify FFmpeg binaries
       run: |
-        # Download pre-compiled static FFmpeg binaries for Android
-        # Using binaries from Khang-NT/ffmpeg-binary-android (verified source)
-        # Releases: https://github.com/Khang-NT/ffmpeg-binary-android/releases
+        # FFmpeg binaries are bundled in the repo at ffmpeg_bin/
+        # Just verify they exist and set permissions
+        echo "=== Verifying FFmpeg binaries ==="
+        ls -la ffmpeg_bin/arm64-v8a/
+        ls -la ffmpeg_bin/armeabi-v7a/
         
-        mkdir -p ffmpeg_bin/arm64-v8a
-        mkdir -p ffmpeg_bin/armeabi-v7a
-        
-        # Download arm64-v8a (64-bit ARM) - FULL version with HTTPS support
-        echo "Downloading FFmpeg for arm64-v8a..."
-        curl -L "https://github.com/Khang-NT/ffmpeg-binary-android/releases/download/2018-07-31/arm64-v8a-full.tar.bz2" -o /tmp/ffmpeg-arm64.tar.bz2 2>/dev/null || true
-        
-        if [ -f /tmp/ffmpeg-arm64.tar.bz2 ] && [ -s /tmp/ffmpeg-arm64.tar.bz2 ]; then
-          mkdir -p /tmp/ffmpeg-arm64
-          tar -xjf /tmp/ffmpeg-arm64.tar.bz2 -C /tmp/ffmpeg-arm64 2>/dev/null || true
-          find /tmp/ffmpeg-arm64 -name "ffmpeg" -type f -exec cp {} ffmpeg_bin/arm64-v8a/ \; 2>/dev/null || true
-          find /tmp/ffmpeg-arm64 -name "ffprobe" -type f -exec cp {} ffmpeg_bin/arm64-v8a/ \; 2>/dev/null || true
-        fi
-        
-        # Download armeabi-v7a (32-bit ARM) - using arm-v7n variant
-        echo "Downloading FFmpeg for armeabi-v7a..."
-        curl -L "https://github.com/Khang-NT/ffmpeg-binary-android/releases/download/2018-07-31/arm-v7n-full.tar.bz2" -o /tmp/ffmpeg-arm32.tar.bz2 2>/dev/null || true
-        
-        if [ -f /tmp/ffmpeg-arm32.tar.bz2 ] && [ -s /tmp/ffmpeg-arm32.tar.bz2 ]; then
-          mkdir -p /tmp/ffmpeg-arm32
-          tar -xjf /tmp/ffmpeg-arm32.tar.bz2 -C /tmp/ffmpeg-arm32 2>/dev/null || true
-          find /tmp/ffmpeg-arm32 -name "ffmpeg" -type f -exec cp {} ffmpeg_bin/armeabi-v7a/ \; 2>/dev/null || true
-          find /tmp/ffmpeg-arm32 -name "ffprobe" -type f -exec cp {} ffmpeg_bin/armeabi-v7a/ \; 2>/dev/null || true
-        fi
-        
-        # Fallback: If arm32 failed, copy arm64 files (won't work on pure 32-bit devices)
-        if [ ! -f ffmpeg_bin/armeabi-v7a/ffmpeg ] && [ -f ffmpeg_bin/arm64-v8a/ffmpeg ]; then
-          echo "Warning: Using arm64 binaries as fallback for arm32"
-          cp ffmpeg_bin/arm64-v8a/* ffmpeg_bin/armeabi-v7a/ 2>/dev/null || true
-        fi
-        
-        # Make binaries executable
-        chmod +x ffmpeg_bin/*/ffmpeg ffmpeg_bin/*/ffprobe 2>/dev/null || true
-        
-        # Show results
-        echo "=== FFmpeg binaries ==="
-        ls -la ffmpeg_bin/*/ 2>/dev/null || echo "WARNING: No binaries found!"
-        
-        # Verify at least arm64 binary exists
         if [ ! -f ffmpeg_bin/arm64-v8a/ffmpeg ]; then
-          echo "ERROR: Failed to download FFmpeg binaries!"
-          echo "The build will continue but FFmpeg features may not work."
+          echo "ERROR: arm64-v8a/ffmpeg not found!"
+          exit 1
         fi
+        
+        if [ ! -f ffmpeg_bin/armeabi-v7a/ffmpeg ]; then
+          echo "ERROR: armeabi-v7a/ffmpeg not found!"
+          exit 1
+        fi
+        
+        # Ensure binaries are executable
+        chmod +x ffmpeg_bin/*/ffmpeg 2>/dev/null || true
+        
+        echo "FFmpeg binaries verified successfully!"
     
     - name: Build APK with Buildozer
       run: |
