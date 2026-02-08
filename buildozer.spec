@@ -16,7 +16,7 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json
 
 # (list) List of inclusions using pattern matching
-#source.include_patterns = assets/*,images/*.png
+source.include_patterns = ffmpeg_bin/*
 
 # (list) Source files to exclude (let empty to not exclude anything)
 #source.exclude_exts = spec
@@ -36,7 +36,7 @@ version = 1.0.0
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
-requirements = python3,kivy,yt-dlp,pyjnius,android,certifi,ffpyplayer,openssl
+requirements = python3,kivy,yt-dlp,pyjnius,android,certifi
 
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes

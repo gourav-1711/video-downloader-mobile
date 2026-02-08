@@ -34,30 +34,68 @@ def get_download_path():
 def get_ffmpeg_location():
     """Get FFmpeg location for yt-dlp on Android
 
-    ffpyplayer bundles FFmpeg libraries, but yt-dlp needs the binary path.
-    On Android, we search common locations where ffmpeg might be installed.
+    This function extracts bundled FFmpeg binaries to the app's files directory
+    and sets executable permissions so yt-dlp can use them.
     """
     if platform == "android":
         try:
             from android import mActivity
+            import shutil
+            import stat
 
-            # Get the app's native library directory
-            app_info = mActivity.getApplicationInfo()
-            native_lib_dir = app_info.nativeLibraryDir
-
-            # Look for ffmpeg in the native libs directory
-            ffmpeg_path = os.path.join(native_lib_dir, "libffmpeg.so")
-            if os.path.exists(ffmpeg_path):
-                return native_lib_dir
-
-            # Also check the app's files directory
+            # Get the app's files directory (writable location)
             files_dir = str(mActivity.getFilesDir().getAbsolutePath())
-            ffmpeg_path = os.path.join(files_dir, "ffmpeg")
-            if os.path.exists(ffmpeg_path):
-                return files_dir
+            ffmpeg_dir = os.path.join(files_dir, "ffmpeg_bin")
+            ffmpeg_path = os.path.join(ffmpeg_dir, "ffmpeg")
+            ffprobe_path = os.path.join(ffmpeg_dir, "ffprobe")
 
-        except Exception:
-            pass
+            # If already extracted, return the path
+            if os.path.exists(ffmpeg_path) and os.path.exists(ffprobe_path):
+                return ffmpeg_dir
+
+            # Create the ffmpeg directory
+            os.makedirs(ffmpeg_dir, exist_ok=True)
+
+            # Detect device architecture
+            from jnius import autoclass
+
+            Build = autoclass("android.os.Build")
+            supported_abis = list(Build.SUPPORTED_ABIS)
+
+            # Determine which architecture to use
+            arch = "arm64-v8a"  # Default
+            if "arm64-v8a" in supported_abis:
+                arch = "arm64-v8a"
+            elif "armeabi-v7a" in supported_abis:
+                arch = "armeabi-v7a"
+
+            # Get the bundled binaries from app's assets
+            # Binaries are included via source.include_patterns in buildozer.spec
+            app_dir = os.path.dirname(os.path.abspath(__file__))
+            bundled_dir = os.path.join(app_dir, "ffmpeg_bin", arch)
+
+            # Copy ffmpeg and ffprobe to files directory
+            for binary in ["ffmpeg", "ffprobe"]:
+                src = os.path.join(bundled_dir, binary)
+                dst = os.path.join(ffmpeg_dir, binary)
+                if os.path.exists(src):
+                    shutil.copy2(src, dst)
+                    # Set executable permissions (chmod +x)
+                    os.chmod(
+                        dst,
+                        os.stat(dst).st_mode
+                        | stat.S_IXUSR
+                        | stat.S_IXGRP
+                        | stat.S_IXOTH,
+                    )
+
+            if os.path.exists(ffmpeg_path):
+                return ffmpeg_dir
+
+        except Exception as e:
+            # Log error but don't crash
+            print(f"FFmpeg setup error: {e}")
+
     return None  # Use system default on desktop
 
 
