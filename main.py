@@ -17,7 +17,6 @@ from kivy.utils import platform
 import yt_dlp
 
 
-# Get download path based on platform
 def get_download_path():
     if platform == "android":
         from android.storage import primary_external_storage_path
@@ -30,6 +29,36 @@ def get_download_path():
     else:
         # For desktop, use current directory or Downloads folder
         return os.path.expanduser("~/Downloads")
+
+
+def get_ffmpeg_location():
+    """Get FFmpeg location for yt-dlp on Android
+
+    ffpyplayer bundles FFmpeg libraries, but yt-dlp needs the binary path.
+    On Android, we search common locations where ffmpeg might be installed.
+    """
+    if platform == "android":
+        try:
+            from android import mActivity
+
+            # Get the app's native library directory
+            app_info = mActivity.getApplicationInfo()
+            native_lib_dir = app_info.nativeLibraryDir
+
+            # Look for ffmpeg in the native libs directory
+            ffmpeg_path = os.path.join(native_lib_dir, "libffmpeg.so")
+            if os.path.exists(ffmpeg_path):
+                return native_lib_dir
+
+            # Also check the app's files directory
+            files_dir = str(mActivity.getFilesDir().getAbsolutePath())
+            ffmpeg_path = os.path.join(files_dir, "ffmpeg")
+            if os.path.exists(ffmpeg_path):
+                return files_dir
+
+        except Exception:
+            pass
+    return None  # Use system default on desktop
 
 
 def scan_media_file(filepath):
@@ -404,6 +433,11 @@ class DownloaderApp(App):
                 # Prefer non-fragmented formats
                 "format_sort": ["proto:https", "ext:mp4:webm"],
             }
+
+            # Set FFmpeg location for Android (from ffpyplayer)
+            ffmpeg_loc = get_ffmpeg_location()
+            if ffmpeg_loc:
+                ydl_opts["ffmpeg_location"] = ffmpeg_loc
 
             # Add FFmpeg post-processing based on format type
             if format_type == "Audio":
