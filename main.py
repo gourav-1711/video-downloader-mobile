@@ -507,7 +507,6 @@ class DownloaderApp(App):
         self.eta_label.text = "ETA: Done!"
         self.size_label.text = ""
         self.download_btn.disabled = False
-        toast("Download finished! Saved to Downloads/YouTube-Downloader")
 
     def download_error(self, error):
         self.status_label.text = f"Error: {error}"
@@ -518,7 +517,6 @@ class DownloaderApp(App):
         self.eta_label.text = ""
         self.size_label.text = ""
         self.download_btn.disabled = False
-        toast(f"Download Error: {error}")
 
     def reset_progress(self):
         self.status_label.text = "Starting download..."
