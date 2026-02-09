@@ -1,4 +1,4 @@
-"""Android-specific helper functions for the YouTube Downloader app."""
+"""Android-specific helper functions for the Video Downloader app."""
 
 import os
 from kivy.utils import platform
@@ -11,7 +11,7 @@ def get_download_path():
         from android import mActivity
 
         # Use App-Specific External Storage
-        # Path: /sdcard/Android/data/org.pyapp.ytdownloader/files/Download
+        # Path: /sdcard/Android/data/org.pyapp.videodownloader/files/Download
         context = cast("android.content.Context", mActivity.getApplicationContext())
 
         # getExternalFilesDir(None) gives us the private app folder on SD card
@@ -93,37 +93,23 @@ def scan_media_file(filepath):
 
 
 def toast(message):
-    """Show a short toast message on Android (Thread-safe)"""
+    """Show a short toast message on Android - simplified version"""
     if platform == "android":
-        from jnius import autoclass, cast, PythonJavaClass, java_method
-        from android import mActivity
+        try:
+            from android.runnable import run_on_ui_thread
 
-        PythonActivity = autoclass("org.kivy.android.PythonActivity")
-        currentActivity = cast("android.app.Activity", PythonActivity.mActivity)
-        JString = autoclass("java.lang.String")
-        Toast = autoclass("android.widget.Toast")
+            @run_on_ui_thread
+            def show_toast(msg):
+                from jnius import autoclass
+                from android import mActivity
 
-        class ToastRunnable(PythonJavaClass):
-            __javainterfaces__ = ["java/lang/Runnable"]
-            __javacontext__ = "app"
+                Toast = autoclass("android.widget.Toast")
+                context = mActivity.getApplicationContext()
+                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
 
-            def __init__(self, message):
-                self.message = message
-                super().__init__()
-
-            @java_method("()V")
-            def run(self):
-                try:
-                    t = Toast.makeText(
-                        currentActivity.getApplicationContext(),
-                        JString(self.message),
-                        Toast.LENGTH_LONG,
-                    )
-                    t.show()
-                except Exception as e:
-                    print(f"Toast error: {e}")
-
-        currentActivity.runOnUiThread(ToastRunnable(message))
+            show_toast(str(message))
+        except Exception as e:
+            print(f"Toast failed: {e}")
     else:
         print(f"TOAST: {message}")
 
@@ -140,7 +126,7 @@ def copy_to_public_downloads(private_file_path, filename):
 
             # Check if source file exists
             if not os.path.exists(private_file_path):
-                toast(f"Source not found: {private_file_path[-30:]}")
+                print(f"Source not found: {private_file_path}")
                 return False
 
             # Java classes
@@ -187,29 +173,25 @@ def copy_to_public_downloads(private_file_path, filename):
             )
 
             if uri is None:
-                toast("MediaStore insert failed - no URI returned")
+                print("MediaStore insert failed - no URI returned")
                 return False
 
             # Open streams to copy data
             out_stream = resolver.openOutputStream(uri)
             if out_stream is None:
-                toast("Failed to open output stream")
+                print("Failed to open output stream")
                 return False
 
             in_stream = FileInputStream(private_file_path)
 
-            # Use Java byte array for proper stream copying
-            JArray = autoclass("java.lang.reflect.Array")
-            Byte = autoclass("java.lang.Byte")
-            buffer = JArray.newInstance(Byte.TYPE, 8192)  # 8KB buffer
-
-            total_bytes = 0
+            # Simple byte-by-byte copy using Java streams
+            byte_array = bytearray(8192)
             while True:
-                bytes_read = in_stream.read(buffer)
+                bytes_read = in_stream.read(byte_array)
                 if bytes_read == -1:
                     break
-                out_stream.write(buffer, 0, bytes_read)
-                total_bytes += bytes_read
+                # Convert to Java byte array for writing
+                out_stream.write(byte_array[:bytes_read])
 
             in_stream.close()
             out_stream.close()
@@ -219,11 +201,14 @@ def copy_to_public_downloads(private_file_path, filename):
             update_values.put(MediaStore.MediaColumns.IS_PENDING, Integer(0))
             resolver.update(uri, update_values, None, None)
 
-            return True  # Success!
+            print(f"Successfully copied to public downloads: {filename}")
+            return True
 
         except Exception as e:
             print(f"Error copying to public downloads: {e}")
-            toast(f"Copy error: {str(e)[:50]}")
+            import traceback
+
+            traceback.print_exc()
             return False
 
     return False

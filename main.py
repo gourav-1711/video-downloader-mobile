@@ -421,17 +421,17 @@ class DownloaderApp(App):
                                 actual_path, filename_only
                             )
                             if success:
-                                toast(f"Saved: {filename_only}")
+                                print(f"Saved to public: {filename_only}")
                                 try:
                                     os.remove(actual_path)
                                 except Exception:
                                     pass
                             else:
                                 # Fallback: at least scan the private file
-                                toast(f"Copy failed, file at: {actual_path}")
+                                print(f"Copy failed, file at: {actual_path}")
                                 scan_media_file(actual_path)
                         else:
-                            toast(f"File not found: {expected_path}")
+                            print(f"File not found: {expected_path}")
 
     def progress_hook(self, d):
         if d["status"] == "downloading":
