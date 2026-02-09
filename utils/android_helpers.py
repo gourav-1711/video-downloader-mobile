@@ -92,6 +92,42 @@ def scan_media_file(filepath):
             pass  # Silently fail on non-Android
 
 
+def toast(message):
+    """Show a short toast message on Android (Thread-safe)"""
+    if platform == "android":
+        from jnius import autoclass, cast, PythonJavaClass, java_method
+        from android import mActivity
+
+        PythonActivity = autoclass("org.kivy.android.PythonActivity")
+        currentActivity = cast("android.app.Activity", PythonActivity.mActivity)
+        JString = autoclass("java.lang.String")
+        Toast = autoclass("android.widget.Toast")
+
+        class ToastRunnable(PythonJavaClass):
+            __javainterfaces__ = ["java/lang/Runnable"]
+            __javacontext__ = "app"
+
+            def __init__(self, message):
+                self.message = message
+                super().__init__()
+
+            @java_method("()V")
+            def run(self):
+                try:
+                    t = Toast.makeText(
+                        currentActivity.getApplicationContext(),
+                        JString(self.message),
+                        Toast.LENGTH_LONG,
+                    )
+                    t.show()
+                except Exception as e:
+                    print(f"Toast error: {e}")
+
+        currentActivity.runOnUiThread(ToastRunnable(message))
+    else:
+        print(f"TOAST: {message}")
+
+
 def copy_to_public_downloads(private_file_path, filename):
     """
     Copies a file from the app-private folder to the public Download folder
@@ -107,6 +143,7 @@ def copy_to_public_downloads(private_file_path, filename):
             MediaStore = autoclass("android.provider.MediaStore")
             ContentValues = autoclass("android.content.ContentValues")
             FileInputStream = autoclass("java.io.FileInputStream")
+            Integer = autoclass("java.lang.Integer")
 
             # Get the Content Resolver (the system service that handles files)
             context = cast(Context, mActivity.getApplicationContext())
@@ -129,11 +166,12 @@ def copy_to_public_downloads(private_file_path, filename):
                 mime_type = "video/mp4"
 
             content_values.put(MediaStore.MediaColumns.MIME_TYPE, mime_type)
-
-            # Tell Android to put it in the standard "Download" directory
             content_values.put(
                 MediaStore.MediaColumns.RELATIVE_PATH, "Download/YouTube-Downloader"
             )
+
+            # Set IS_PENDING = 1 so other apps don't see the file while we copy
+            content_values.put("is_pending", Integer(1))
 
             # Insert the empty file into MediaStore
             uri = resolver.insert(
@@ -155,10 +193,17 @@ def copy_to_public_downloads(private_file_path, filename):
 
                 in_stream.close()
                 out_stream.close()
+
+                # Now that copy is done, set IS_PENDING = 0 to reveal the file
+                content_values.clear()
+                content_values.put("is_pending", Integer(0))
+                resolver.update(uri, content_values, None, None)
+
                 return True  # Success!
 
         except Exception as e:
             print(f"Error copying to public downloads: {e}")
+            toast(f"Copy failed: {str(e)[:50]}")  # Show user why it failed
             return False
 
     return False

@@ -22,6 +22,7 @@ from utils import (
     get_ffmpeg_location,
     scan_media_file,
     copy_to_public_downloads,
+    toast,
 )
 from ui import StyledBoxLayout, StyledProgressBar, GradientButton
 
@@ -32,14 +33,14 @@ Window.clearcolor = (0.08, 0.08, 0.12, 1)  # Dark background
 
 class DownloaderApp(App):
     def build(self):
-        self.title = "YouTube Downloader"
+        self.title = "Video Downloader"
 
         # Main container
         main_layout = BoxLayout(orientation="vertical", padding=20, spacing=15)
 
         # Header
         header = Label(
-            text="[b]YouTube Downloader[/b]",
+            text="[b]Video Downloader[/b]",
             markup=True,
             font_size="28sp",
             size_hint=(1, 0.1),
@@ -471,6 +472,7 @@ class DownloaderApp(App):
         self.eta_label.text = "ETA: Done!"
         self.size_label.text = ""
         self.download_btn.disabled = False
+        toast("Download finished! Saved to Downloads/YouTube-Downloader")
 
     def download_error(self, error):
         self.status_label.text = f"Error: {error}"
@@ -481,6 +483,7 @@ class DownloaderApp(App):
         self.eta_label.text = ""
         self.size_label.text = ""
         self.download_btn.disabled = False
+        toast(f"Download Error: {error}")
 
     def reset_progress(self):
         self.status_label.text = "Starting download..."

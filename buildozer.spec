@@ -1,10 +1,8 @@
-[app]
-
 # (str) Title of your application
-title = YouTube Downloader
+title = Video Downloader
 
 # (str) Package name
-package.name = ytdownloader
+package.name = videodownloader
 
 # (str) Package domain (needed for android/ios packaging)
 package.domain = org.pyapp
