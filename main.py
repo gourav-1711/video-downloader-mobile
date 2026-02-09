@@ -1,252 +1,33 @@
+"""YouTube Downloader - A Kivy app for downloading videos and audio."""
+
 import threading
 import os
 import certifi
 
 os.environ["SSL_CERT_FILE"] = certifi.where()
-import sys
-import io
+
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.textinput import TextInput
-from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.spinner import Spinner
-from kivy.uix.widget import Widget
 from kivy.clock import Clock
-from kivy.graphics import Color, RoundedRectangle
 from kivy.core.window import Window
-from kivy.properties import NumericProperty
 from kivy.utils import platform
 import yt_dlp
 
-
-def get_download_path():
-    """Get a writable path that works on Android 10+ without special permissions"""
-    if platform == "android":
-        from jnius import autoclass, cast
-        from android import mActivity
-
-        # Use App-Specific External Storage
-        # Path: /sdcard/Android/data/org.pyapp.ytdownloader/files/Download
-        context = cast("android.content.Context", mActivity.getApplicationContext())
-
-        # getExternalFilesDir(None) gives us the private app folder on SD card
-        file_p = context.getExternalFilesDir(None)
-        download_path = os.path.join(file_p.getAbsolutePath(), "Download")
-    else:
-        # Desktop fallback
-        download_path = os.path.expanduser("~/Downloads")
-
-    if not os.path.exists(download_path):
-        os.makedirs(download_path)
-    return download_path
-
-
-def get_ffmpeg_location():
-    """Locate the pre-installed 'fake library' FFmpeg"""
-    if platform == "android":
-        try:
-            from jnius import autoclass, cast
-            from android import mActivity
-
-            # 1. Find the read-only executable in the system library path
-            Context = autoclass("android.content.Context")
-            context = cast(Context, mActivity.getApplicationContext())
-            app_info = context.getApplicationInfo()
-            native_lib_dir = app_info.nativeLibraryDir
-
-            # The system installed it here because we named it .so
-            source_ffmpeg = os.path.join(native_lib_dir, "libffmpeg.so")
-
-            # 2. Verify it exists
-            if not os.path.exists(source_ffmpeg):
-                print(f"Error: libffmpeg.so not found at {source_ffmpeg}")
-                return None
-
-            # 3. Create a symlink named "ffmpeg" in our writable folder
-            # yt-dlp needs the file to be named "ffmpeg", not "libffmpeg.so"
-            files_dir = context.getFilesDir().getAbsolutePath()
-            bin_dir = os.path.join(files_dir, "bin")
-            os.makedirs(bin_dir, exist_ok=True)
-
-            target_ffmpeg = os.path.join(bin_dir, "ffmpeg")
-
-            # Re-create the link if needed
-            if os.path.exists(target_ffmpeg):
-                if os.path.realpath(target_ffmpeg) != source_ffmpeg:
-                    os.remove(target_ffmpeg)
-                    os.symlink(source_ffmpeg, target_ffmpeg)
-            else:
-                os.symlink(source_ffmpeg, target_ffmpeg)
-
-            # Return the DIRECTORY containing the 'ffmpeg' link
-            return bin_dir
-
-        except Exception as e:
-            print(f"FFmpeg setup error: {e}")
-            return None
-
-    return None  # Use system default on desktop
-
-
-def scan_media_file(filepath):
-    """Make downloaded file visible in Android gallery/file manager"""
-    if platform == "android":
-        try:
-            from android import mActivity
-            from jnius import autoclass
-
-            Intent = autoclass("android.content.Intent")
-            Uri = autoclass("android.net.Uri")
-            File = autoclass("java.io.File")
-
-            # Broadcast to media scanner
-            intent = Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE)
-            intent.setData(Uri.fromFile(File(filepath)))
-            mActivity.sendBroadcast(intent)
-        except Exception:
-            pass  # Silently fail on non-Android
-
-
-def copy_to_public_downloads(private_file_path, filename):
-    """
-    Copies a file from the app-private folder to the public Download folder
-    using the Android MediaStore API (Works on Android 10+).
-    """
-    if platform == "android":
-        try:
-            from jnius import autoclass, cast
-            from android import mActivity
-
-            # Java classes
-            Context = autoclass("android.content.Context")
-            MediaStore = autoclass("android.provider.MediaStore")
-            ContentValues = autoclass("android.content.ContentValues")
-            FileInputStream = autoclass("java.io.FileInputStream")
-
-            # Get the Content Resolver (the system service that handles files)
-            context = cast(Context, mActivity.getApplicationContext())
-            resolver = context.getContentResolver()
-
-            # Set up the new file details
-            content_values = ContentValues()
-            content_values.put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
-
-            # Detect MIME type from extension
-            if filename.endswith(".mp3"):
-                mime_type = "audio/mpeg"
-            elif filename.endswith(".m4a"):
-                mime_type = "audio/mp4"
-            elif filename.endswith(".mkv"):
-                mime_type = "video/x-matroska"
-            elif filename.endswith(".webm"):
-                mime_type = "video/webm"
-            else:
-                mime_type = "video/mp4"
-
-            content_values.put(MediaStore.MediaColumns.MIME_TYPE, mime_type)
-
-            # Tell Android to put it in the standard "Download" directory
-            content_values.put(
-                MediaStore.MediaColumns.RELATIVE_PATH, "Download/YouTube-Downloader"
-            )
-
-            # Insert the empty file into MediaStore
-            uri = resolver.insert(
-                MediaStore.Downloads.EXTERNAL_CONTENT_URI, content_values
-            )
-
-            if uri:
-                # Open streams to copy data
-                out_stream = resolver.openOutputStream(uri)
-                in_stream = FileInputStream(private_file_path)
-
-                # Copy in chunks (4KB buffer)
-                buffer = bytearray(4096)
-                while True:
-                    bytes_read = in_stream.read(buffer)
-                    if bytes_read == -1:
-                        break
-                    out_stream.write(buffer, 0, bytes_read)
-
-                in_stream.close()
-                out_stream.close()
-                return True  # Success!
-
-        except Exception as e:
-            print(f"Error copying to public downloads: {e}")
-            return False
-
-    return False
+# Import from local modules
+from utils import (
+    get_download_path,
+    get_ffmpeg_location,
+    scan_media_file,
+    copy_to_public_downloads,
+)
+from ui import StyledBoxLayout, StyledProgressBar, GradientButton
 
 
 # Set window background color
 Window.clearcolor = (0.08, 0.08, 0.12, 1)  # Dark background
-
-
-class StyledBoxLayout(BoxLayout):
-    """Custom BoxLayout with rounded background"""
-
-    def __init__(self, bg_color=(0.15, 0.15, 0.2, 1), corner_radius=15, **kwargs):
-        super().__init__(**kwargs)
-        self.bg_color = bg_color
-        self.corner_radius = corner_radius
-        with self.canvas.before:
-            Color(*self.bg_color)
-            self.rect = RoundedRectangle(
-                pos=self.pos, size=self.size, radius=[self.corner_radius]
-            )
-        self.bind(pos=self._update_rect, size=self._update_rect)
-
-    def _update_rect(self, *args):
-        self.rect.pos = self.pos
-        self.rect.size = self.size
-
-
-class StyledProgressBar(Widget):
-    """Custom progress bar with gradient styling"""
-
-    progress = NumericProperty(0)
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.bind(pos=self._update, size=self._update, progress=self._update)
-        self._update()
-
-    def _update(self, *args):
-        self.canvas.clear()
-        with self.canvas:
-            # Background
-            Color(0.2, 0.2, 0.28, 1)
-            RoundedRectangle(pos=self.pos, size=self.size, radius=[10])
-            # Progress fill
-            if self.progress > 0:
-                Color(0.4, 0.6, 1, 1)  # Bright blue
-                fill_width = (self.width - 4) * (self.progress / 100)
-                RoundedRectangle(
-                    pos=(self.x + 2, self.y + 2),
-                    size=(fill_width, self.height - 4),
-                    radius=[8],
-                )
-
-
-class GradientButton(Button):
-    """Custom Button with gradient-like styling"""
-
-    def __init__(self, gradient_colors=None, **kwargs):
-        super().__init__(**kwargs)
-        self.background_normal = ""
-        self.background_color = (0, 0, 0, 0)  # Transparent default
-        self.colors = gradient_colors or [(0.4, 0.2, 0.8, 1), (0.2, 0.6, 0.8, 1)]
-
-        with self.canvas.before:
-            Color(*self.colors[0])
-            self.rect = RoundedRectangle(pos=self.pos, size=self.size, radius=[12])
-        self.bind(pos=self._update_rect, size=self._update_rect)
-
-    def _update_rect(self, *args):
-        self.rect.pos = self.pos
-        self.rect.size = self.size
 
 
 class DownloaderApp(App):
@@ -334,9 +115,10 @@ class DownloaderApp(App):
         format_label.bind(size=format_label.setter("text_size"))
         format_box.add_widget(format_label)
 
+        # Added "Playlist (Audio)" option
         self.format_spinner = Spinner(
             text="Both",
-            values=("Audio", "Video", "Both"),
+            values=("Audio", "Video", "Both", "Playlist (Audio)"),
             size_hint=(1, 0.7),
             background_color=(0.25, 0.25, 0.35, 1),
             color=(1, 1, 1, 1),
@@ -416,9 +198,7 @@ class DownloaderApp(App):
         progress_card.add_widget(progress_header)
 
         # Progress bar
-        self.progress_bar = StyledProgressBar(
-            size_hint=(1, 0.3),
-        )
+        self.progress_bar = StyledProgressBar(size_hint=(1, 0.3))
         progress_card.add_widget(self.progress_bar)
 
         # Speed and ETA row
@@ -488,25 +268,23 @@ class DownloaderApp(App):
         }
         q = quality_map.get(quality, "")
 
-        if format_type == "Audio":
+        if format_type == "Audio" or format_type == "Playlist (Audio)":
             return "bestaudio/best"
         elif format_type == "Video":
-            # Prefer pre-muxed video, fallback to video-only
             return f"bestvideo{q}/best{q}"
         else:  # Both (Video + Audio)
-            # IMPORTANT: Prefer pre-muxed formats (best) to avoid FFmpeg merge issues
-            # Only use bestvideo+bestaudio as fallback
+            # Prefer pre-muxed formats to avoid FFmpeg merge issues
             if q:
                 return f"best{q}/bestvideo{q}+bestaudio/best"
             return "best/bestvideo+bestaudio"
 
     def run_download(self, url, format_type, quality):
+        """Main download function with fallback handling"""
         try:
             format_string = self.get_format_string(format_type, quality)
             download_path = get_download_path()
 
-            # Create a custom logger class for Android compatibility
-            # On Android/Kivy, sys.stdout/stderr may be strings, not file-like objects
+            # Custom logger for Android compatibility
             class QuietLogger:
                 def debug(self, msg):
                     pass
@@ -517,12 +295,11 @@ class DownloaderApp(App):
                 def error(self, msg):
                     pass
 
-            # Use timestamp-based filename to avoid metadata extraction issues
             from datetime import datetime
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-            # Base options with Android-compatible settings
+            # Base yt-dlp options
             ydl_opts = {
                 "format": format_string,
                 "outtmpl": {
@@ -530,26 +307,36 @@ class DownloaderApp(App):
                         download_path, f"download_{timestamp}.%(ext)s"
                     )
                 },
-                "noplaylist": True,
                 "progress_hooks": [self.progress_hook],
                 "quiet": True,
                 "no_warnings": True,
-                "noprogress": True,  # Disable console progress to avoid write issues
-                "logger": QuietLogger(),  # Use custom logger for Android
-                # Speed optimizations
+                "noprogress": True,
+                "logger": QuietLogger(),
                 "concurrent_fragment_downloads": 8,
                 "buffersize": 1024 * 64,
                 "http_chunk_size": 10485760,
-                # Prefer already-muxed formats to avoid FFmpeg issues
                 "format_sort": ["res", "ext:mp4:m4a:webm", "proto:https"],
             }
 
-            # Set FFmpeg location for Android
+            # Playlist handling
+            if format_type == "Playlist (Audio)":
+                ydl_opts["noplaylist"] = False  # Enable playlist downloads
+                ydl_opts["postprocessors"] = [
+                    {
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": "mp3",
+                        "preferredquality": "192",
+                    }
+                ]
+            else:
+                ydl_opts["noplaylist"] = True  # Single video only
+
+            # Set FFmpeg location
             ffmpeg_loc = get_ffmpeg_location()
             if ffmpeg_loc:
                 ydl_opts["ffmpeg_location"] = ffmpeg_loc
 
-            # Add FFmpeg post-processing based on format type
+            # Audio format handling
             if format_type == "Audio":
                 ydl_opts["postprocessors"] = [
                     {
@@ -559,51 +346,69 @@ class DownloaderApp(App):
                     }
                 ]
             elif format_type == "Both":
-                # Use mkv as merge format - more compatible with various codecs
                 ydl_opts["merge_output_format"] = "mkv"
-                # Add FFmpeg args for better compatibility with older FFmpeg
                 ydl_opts["postprocessor_args"] = {
                     "ffmpeg": ["-c", "copy", "-strict", "-2"]
                 }
 
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                if info:
-                    # 1. Get the private file path
-                    private_fullpath = ydl.prepare_filename(info)
-                    filename_only = os.path.basename(private_fullpath)
-
-                    # 2. Copy to public Downloads folder using MediaStore API
-                    success = copy_to_public_downloads(private_fullpath, filename_only)
-
-                    if success:
-                        # Delete the private original to save space
-                        try:
-                            os.remove(private_fullpath)
-                        except Exception:
-                            pass
-                        # The file is now in public Downloads, visible in Gallery
-                    else:
-                        # If copy failed, scan the private file as fallback
-                        scan_media_file(private_fullpath)
+            # Try download with fallback for "Both" format
+            try:
+                self._do_download(ydl_opts, url)
+            except Exception as merge_error:
+                # If merge fails for "Both", fallback to pre-muxed video
+                if format_type == "Both" and "post" in str(merge_error).lower():
+                    Clock.schedule_once(
+                        lambda dt: self.update_progress(
+                            "Merge failed, trying fallback...", 50, "--", "--", ""
+                        )
+                    )
+                    # Retry with simple "best" format (already has audio)
+                    ydl_opts["format"] = "best"
+                    ydl_opts.pop("merge_output_format", None)
+                    ydl_opts.pop("postprocessor_args", None)
+                    self._do_download(ydl_opts, url)
+                else:
+                    raise  # Re-raise if not a merge error
 
             Clock.schedule_once(lambda dt: self.download_complete())
 
         except Exception as e:
-            error_msg = str(e)[:100]  # Truncate long error messages
+            error_msg = str(e)[:100]
             Clock.schedule_once(lambda dt: self.download_error(error_msg))
+
+    def _do_download(self, ydl_opts, url):
+        """Execute the actual download and copy to public folder"""
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            if info:
+                # Handle playlist (multiple entries) or single video
+                entries = info.get("entries", [info])
+                for entry in entries:
+                    if entry:
+                        private_fullpath = ydl.prepare_filename(entry)
+                        filename_only = os.path.basename(private_fullpath)
+
+                        # Copy to public Downloads
+                        success = copy_to_public_downloads(
+                            private_fullpath, filename_only
+                        )
+                        if success:
+                            try:
+                                os.remove(private_fullpath)
+                            except Exception:
+                                pass
+                        else:
+                            scan_media_file(private_fullpath)
 
     def progress_hook(self, d):
         if d["status"] == "downloading":
-            # Extract progress values safely
             percent = d.get("downloaded_bytes", 0) or 0
             total = d.get("total_bytes") or d.get("total_bytes_estimate", 0) or 0
 
-            # Safely get speed - yt_dlp may return raw value or formatted string
+            # Format speed
             speed_raw = d.get("speed")
             if speed_raw is not None:
                 try:
-                    # Format speed as MB/s or KB/s
                     if speed_raw >= 1024 * 1024:
                         speed = f"{speed_raw / (1024 * 1024):.1f} MB/s"
                     elif speed_raw >= 1024:
@@ -611,22 +416,21 @@ class DownloaderApp(App):
                     else:
                         speed = f"{speed_raw:.0f} B/s"
                 except (TypeError, ValueError):
-                    speed = str(speed_raw) if speed_raw else "--"
+                    speed = "--"
             else:
                 speed = "--"
 
-            # Safely get ETA - yt_dlp may return raw seconds or formatted string
+            # Format ETA
             eta_raw = d.get("eta")
             if eta_raw is not None:
                 try:
-                    # Format ETA as mm:ss or hh:mm:ss
                     eta_seconds = int(eta_raw)
                     if eta_seconds >= 3600:
                         eta = f"{eta_seconds // 3600}:{(eta_seconds % 3600) // 60:02d}:{eta_seconds % 60:02d}"
                     else:
                         eta = f"{eta_seconds // 60}:{eta_seconds % 60:02d}"
                 except (TypeError, ValueError):
-                    eta = str(eta_raw) if eta_raw else "--"
+                    eta = "--"
             else:
                 eta = "--"
 
@@ -646,9 +450,7 @@ class DownloaderApp(App):
             )
         elif d["status"] == "finished":
             Clock.schedule_once(
-                lambda dt: self.update_progress(
-                    "Processing with FFmpeg...", 100, "--", "--", ""
-                )
+                lambda dt: self.update_progress("Processing...", 100, "--", "--", "")
             )
 
     def update_progress(self, status, percent, speed, eta, size_text):
