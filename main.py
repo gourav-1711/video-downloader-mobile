@@ -22,7 +22,7 @@ from utils import (
     get_ffmpeg_location,
     scan_media_file,
     copy_to_public_downloads,
-    toast,
+    request_storage_permission,
 )
 from ui import StyledBoxLayout, StyledProgressBar, GradientButton
 
@@ -34,6 +34,9 @@ Window.clearcolor = (0.08, 0.08, 0.12, 1)  # Dark background
 class DownloaderApp(App):
     def build(self):
         self.title = "Video Downloader"
+
+        # Request storage permissions on Android
+        request_storage_permission()
 
         # Main container
         main_layout = BoxLayout(orientation="vertical", padding=20, spacing=15)

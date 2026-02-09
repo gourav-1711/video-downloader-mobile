@@ -1,11 +1,11 @@
-"""Utils package for YouTube Downloader app."""
+"""Utils package for Video Downloader app."""
 
 from .android_helpers import (
     get_download_path,
     get_ffmpeg_location,
     scan_media_file,
     copy_to_public_downloads,
-    toast,
+    request_storage_permission,
 )
 
 __all__ = [
@@ -13,5 +13,5 @@ __all__ = [
     "get_ffmpeg_location",
     "scan_media_file",
     "copy_to_public_downloads",
-    "toast",
+    "request_storage_permission",
 ]
