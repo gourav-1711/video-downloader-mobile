@@ -1,5 +1,8 @@
 import threading
 import os
+import certifi
+
+os.environ["SSL_CERT_FILE"] = certifi.where()
 import sys
 import io
 from kivy.app import App
@@ -103,6 +106,78 @@ def scan_media_file(filepath):
             mActivity.sendBroadcast(intent)
         except Exception:
             pass  # Silently fail on non-Android
+
+
+def copy_to_public_downloads(private_file_path, filename):
+    """
+    Copies a file from the app-private folder to the public Download folder
+    using the Android MediaStore API (Works on Android 10+).
+    """
+    if platform == "android":
+        try:
+            from jnius import autoclass, cast
+            from android import mActivity
+
+            # Java classes
+            Context = autoclass("android.content.Context")
+            MediaStore = autoclass("android.provider.MediaStore")
+            ContentValues = autoclass("android.content.ContentValues")
+            FileInputStream = autoclass("java.io.FileInputStream")
+
+            # Get the Content Resolver (the system service that handles files)
+            context = cast(Context, mActivity.getApplicationContext())
+            resolver = context.getContentResolver()
+
+            # Set up the new file details
+            content_values = ContentValues()
+            content_values.put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+
+            # Detect MIME type from extension
+            if filename.endswith(".mp3"):
+                mime_type = "audio/mpeg"
+            elif filename.endswith(".m4a"):
+                mime_type = "audio/mp4"
+            elif filename.endswith(".mkv"):
+                mime_type = "video/x-matroska"
+            elif filename.endswith(".webm"):
+                mime_type = "video/webm"
+            else:
+                mime_type = "video/mp4"
+
+            content_values.put(MediaStore.MediaColumns.MIME_TYPE, mime_type)
+
+            # Tell Android to put it in the standard "Download" directory
+            content_values.put(
+                MediaStore.MediaColumns.RELATIVE_PATH, "Download/YouTube-Downloader"
+            )
+
+            # Insert the empty file into MediaStore
+            uri = resolver.insert(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI, content_values
+            )
+
+            if uri:
+                # Open streams to copy data
+                out_stream = resolver.openOutputStream(uri)
+                in_stream = FileInputStream(private_file_path)
+
+                # Copy in chunks (4KB buffer)
+                buffer = bytearray(4096)
+                while True:
+                    bytes_read = in_stream.read(buffer)
+                    if bytes_read == -1:
+                        break
+                    out_stream.write(buffer, 0, bytes_read)
+
+                in_stream.close()
+                out_stream.close()
+                return True  # Success!
+
+        except Exception as e:
+            print(f"Error copying to public downloads: {e}")
+            return False
+
+    return False
 
 
 # Set window background color
@@ -416,11 +491,14 @@ class DownloaderApp(App):
         if format_type == "Audio":
             return "bestaudio/best"
         elif format_type == "Video":
+            # Prefer pre-muxed video, fallback to video-only
             return f"bestvideo{q}/best{q}"
-        else:  # Both
+        else:  # Both (Video + Audio)
+            # IMPORTANT: Prefer pre-muxed formats (best) to avoid FFmpeg merge issues
+            # Only use bestvideo+bestaudio as fallback
             if q:
-                return f"bestvideo{q}+bestaudio/best{q}"
-            return "bestvideo+bestaudio/best"
+                return f"best{q}/bestvideo{q}+bestaudio/best"
+            return "best/bestvideo+bestaudio"
 
     def run_download(self, url, format_type, quality):
         try:
@@ -462,11 +540,11 @@ class DownloaderApp(App):
                 "concurrent_fragment_downloads": 8,
                 "buffersize": 1024 * 64,
                 "http_chunk_size": 10485760,
-                # Prefer non-fragmented formats
-                "format_sort": ["proto:https", "ext:mp4:webm"],
+                # Prefer already-muxed formats to avoid FFmpeg issues
+                "format_sort": ["res", "ext:mp4:m4a:webm", "proto:https"],
             }
 
-            # Set FFmpeg location for Android (from ffpyplayer)
+            # Set FFmpeg location for Android
             ffmpeg_loc = get_ffmpeg_location()
             if ffmpeg_loc:
                 ydl_opts["ffmpeg_location"] = ffmpeg_loc
@@ -481,15 +559,33 @@ class DownloaderApp(App):
                     }
                 ]
             elif format_type == "Both":
-                ydl_opts["merge_output_format"] = "mp4"
+                # Use mkv as merge format - more compatible with various codecs
+                ydl_opts["merge_output_format"] = "mkv"
+                # Add FFmpeg args for better compatibility with older FFmpeg
+                ydl_opts["postprocessor_args"] = {
+                    "ffmpeg": ["-c", "copy", "-strict", "-2"]
+                }
 
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
-                # Get the actual downloaded filename
                 if info:
-                    filename = ydl.prepare_filename(info)
-                    # Scan file so it appears in Android gallery/downloads
-                    scan_media_file(filename)
+                    # 1. Get the private file path
+                    private_fullpath = ydl.prepare_filename(info)
+                    filename_only = os.path.basename(private_fullpath)
+
+                    # 2. Copy to public Downloads folder using MediaStore API
+                    success = copy_to_public_downloads(private_fullpath, filename_only)
+
+                    if success:
+                        # Delete the private original to save space
+                        try:
+                            os.remove(private_fullpath)
+                        except Exception:
+                            pass
+                        # The file is now in public Downloads, visible in Gallery
+                    else:
+                        # If copy failed, scan the private file as fallback
+                        scan_media_file(private_fullpath)
 
             Clock.schedule_once(lambda dt: self.download_complete())
 
