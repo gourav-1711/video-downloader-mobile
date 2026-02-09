@@ -138,6 +138,11 @@ def copy_to_public_downloads(private_file_path, filename):
             from jnius import autoclass, cast
             from android import mActivity
 
+            # Check if source file exists
+            if not os.path.exists(private_file_path):
+                toast(f"Source not found: {private_file_path[-30:]}")
+                return False
+
             # Java classes
             Context = autoclass("android.content.Context")
             MediaStore = autoclass("android.provider.MediaStore")
@@ -145,7 +150,7 @@ def copy_to_public_downloads(private_file_path, filename):
             FileInputStream = autoclass("java.io.FileInputStream")
             Integer = autoclass("java.lang.Integer")
 
-            # Get the Content Resolver (the system service that handles files)
+            # Get the Content Resolver
             context = cast(Context, mActivity.getApplicationContext())
             resolver = context.getContentResolver()
 
@@ -154,56 +159,71 @@ def copy_to_public_downloads(private_file_path, filename):
             content_values.put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
 
             # Detect MIME type from extension
-            if filename.endswith(".mp3"):
+            ext = filename.lower()
+            if ext.endswith(".mp3"):
                 mime_type = "audio/mpeg"
-            elif filename.endswith(".m4a"):
+            elif ext.endswith(".m4a"):
                 mime_type = "audio/mp4"
-            elif filename.endswith(".mkv"):
+            elif ext.endswith(".mkv"):
                 mime_type = "video/x-matroska"
-            elif filename.endswith(".webm"):
+            elif ext.endswith(".webm"):
                 mime_type = "video/webm"
+            elif ext.endswith(".opus"):
+                mime_type = "audio/opus"
             else:
                 mime_type = "video/mp4"
 
             content_values.put(MediaStore.MediaColumns.MIME_TYPE, mime_type)
             content_values.put(
-                MediaStore.MediaColumns.RELATIVE_PATH, "Download/YouTube-Downloader"
+                MediaStore.MediaColumns.RELATIVE_PATH, "Download/Video-Downloader"
             )
 
             # Set IS_PENDING = 1 so other apps don't see the file while we copy
-            content_values.put("is_pending", Integer(1))
+            content_values.put(MediaStore.MediaColumns.IS_PENDING, Integer(1))
 
             # Insert the empty file into MediaStore
             uri = resolver.insert(
                 MediaStore.Downloads.EXTERNAL_CONTENT_URI, content_values
             )
 
-            if uri:
-                # Open streams to copy data
-                out_stream = resolver.openOutputStream(uri)
-                in_stream = FileInputStream(private_file_path)
+            if uri is None:
+                toast("MediaStore insert failed - no URI returned")
+                return False
 
-                # Copy in chunks (4KB buffer)
-                buffer = bytearray(4096)
-                while True:
-                    bytes_read = in_stream.read(buffer)
-                    if bytes_read == -1:
-                        break
-                    out_stream.write(buffer, 0, bytes_read)
+            # Open streams to copy data
+            out_stream = resolver.openOutputStream(uri)
+            if out_stream is None:
+                toast("Failed to open output stream")
+                return False
 
-                in_stream.close()
-                out_stream.close()
+            in_stream = FileInputStream(private_file_path)
 
-                # Now that copy is done, set IS_PENDING = 0 to reveal the file
-                content_values.clear()
-                content_values.put("is_pending", Integer(0))
-                resolver.update(uri, content_values, None, None)
+            # Use Java byte array for proper stream copying
+            JArray = autoclass("java.lang.reflect.Array")
+            Byte = autoclass("java.lang.Byte")
+            buffer = JArray.newInstance(Byte.TYPE, 8192)  # 8KB buffer
 
-                return True  # Success!
+            total_bytes = 0
+            while True:
+                bytes_read = in_stream.read(buffer)
+                if bytes_read == -1:
+                    break
+                out_stream.write(buffer, 0, bytes_read)
+                total_bytes += bytes_read
+
+            in_stream.close()
+            out_stream.close()
+
+            # Now that copy is done, set IS_PENDING = 0 to reveal the file
+            update_values = ContentValues()
+            update_values.put(MediaStore.MediaColumns.IS_PENDING, Integer(0))
+            resolver.update(uri, update_values, None, None)
+
+            return True  # Success!
 
         except Exception as e:
             print(f"Error copying to public downloads: {e}")
-            toast(f"Copy failed: {str(e)[:50]}")  # Show user why it failed
+            toast(f"Copy error: {str(e)[:50]}")
             return False
 
     return False

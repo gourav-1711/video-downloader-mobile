@@ -386,20 +386,52 @@ class DownloaderApp(App):
                 entries = info.get("entries", [info])
                 for entry in entries:
                     if entry:
-                        private_fullpath = ydl.prepare_filename(entry)
-                        filename_only = os.path.basename(private_fullpath)
+                        # Get the expected filename
+                        expected_path = ydl.prepare_filename(entry)
+                        base_path = os.path.splitext(expected_path)[0]
 
-                        # Copy to public Downloads
-                        success = copy_to_public_downloads(
-                            private_fullpath, filename_only
-                        )
-                        if success:
-                            try:
-                                os.remove(private_fullpath)
-                            except Exception:
-                                pass
+                        # Try to find the actual file (extension may differ after post-processing)
+                        possible_extensions = [
+                            ".mp3",
+                            ".m4a",
+                            ".mkv",
+                            ".mp4",
+                            ".webm",
+                            ".opus",
+                            ".ogg",
+                        ]
+                        actual_path = None
+
+                        # First check if expected file exists
+                        if os.path.exists(expected_path):
+                            actual_path = expected_path
                         else:
-                            scan_media_file(private_fullpath)
+                            # Search for file with different extension
+                            for ext in possible_extensions:
+                                test_path = base_path + ext
+                                if os.path.exists(test_path):
+                                    actual_path = test_path
+                                    break
+
+                        if actual_path and os.path.exists(actual_path):
+                            filename_only = os.path.basename(actual_path)
+
+                            # Copy to public Downloads
+                            success = copy_to_public_downloads(
+                                actual_path, filename_only
+                            )
+                            if success:
+                                toast(f"Saved: {filename_only}")
+                                try:
+                                    os.remove(actual_path)
+                                except Exception:
+                                    pass
+                            else:
+                                # Fallback: at least scan the private file
+                                toast(f"Copy failed, file at: {actual_path}")
+                                scan_media_file(actual_path)
+                        else:
+                            toast(f"File not found: {expected_path}")
 
     def progress_hook(self, d):
         if d["status"] == "downloading":

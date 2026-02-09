@@ -4,8 +4,12 @@
 ![Kivy](https://img.shields.io/badge/Kivy-2.3.0-green?style=for-the-badge&logo=kivy&logoColor=white)
 ![YT-DLP](https://img.shields.io/badge/yt--dlp-Latest-red?style=for-the-badge&logo=youtube&logoColor=white)
 ![FFmpeg](https://img.shields.io/badge/FFmpeg-Included-orange?style=for-the-badge&logo=ffmpeg&logoColor=white)
+[![GitHub Stars](https://img.shields.io/github/stars/gourav-1711/video-downloader-mobile?style=for-the-badge&logo=github&color=yellow)](https://github.com/gourav-1711/video-downloader-mobile/stargazers)
 
 A powerful, open-source Video Downloader for Android built with Python and Kivy. Download videos, audio, or entire playlists in high quality, with seamless FFmpeg integration for merging formats.
+
+> [!TIP]
+> **Enjoying this project?** Please give it a star on GitHub! ⭐
 
 
 **Features:**
